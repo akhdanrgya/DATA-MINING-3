@@ -88,3 +88,7 @@ fig_map = px.scatter_mapbox(
     mapbox_style="carto-positron"
 )
 st.plotly_chart(fig_map, use_container_width=True)
+
+# ========================== 📋 RINGKASAN =============================
+st.subheader("📋 Ringkasan Risiko per Klaster")
+st.dataframe(cluster_features.sort_values("Cluster"))
