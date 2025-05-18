@@ -1,77 +1,79 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 import plotly.express as px
 
-st.set_page_config(page_title="COVID-19 Clustering Dashboard", layout="wide")
-st.title("Clustering Dashboard COVID-19")
+# konfigurasi awal halaman
+st.set_page_config(page_title="Dashboard Klastering COVID-19", layout="wide")
+st.title("Analisis Klastering COVID-19 - Modul Data Mining")
 
+# load dataset (dengan cache biar cepet)
 @st.cache_data
-def load_data():
-    df = pd.read_csv("covid_19_indonesia_time_series_all.csv")
-    return df
+def ambil_data():
+    data = pd.read_csv("covid_19_indonesia_time_series_all.csv")
+    return data
 
-df = load_data()
+data_covid = ambil_data()
 
-df = df[['Date', 'Location', 'Total Cases', 'Total Deaths', 'Total Recovered', 'Population Density']]
-df.dropna(inplace=True)
+# filter dan bersihin data
+data_covid = data_covid[['Date', 'Location', 'Total Cases', 'Total Deaths', 'Total Recovered', 'Population Density']]
+data_covid.dropna(inplace=True)
 
-unique_locations = df['Location'].unique()
-selected_location = st.sidebar.selectbox("Pilih Lokasi", unique_locations)
-location_data = df[df['Location'] == selected_location]
+# pilih lokasi buat visualisasi tren
+daftar_provinsi = data_covid['Location'].unique()
+provinsi_dipilih = st.sidebar.selectbox("🗺️ Pilih Provinsi", daftar_provinsi)
 
-st.subheader(f"Tren Kasus Harian di {selected_location}")
-fig, ax = plt.subplots(figsize=(10,4))
-daily_cases = location_data.groupby("Date").sum()['Total Cases']
-daily_cases.plot(ax=ax, color='red')
-ax.set_ylabel("Total Cases")
-ax.set_xlabel("Date")
-st.pyplot(fig)
+data_provinsi = data_covid[data_covid['Location'] == provinsi_dipilih]
 
-st.subheader("Hasil Clustering Wilayah")
-cluster_features = df.groupby("Location")[['Total Cases', 'Total Deaths', 'Total Recovered', 'Population Density']].mean()
+# visualisasi tren kasus
+st.subheader(f"📈 Perkembangan Kasus di {provinsi_dipilih}")
+fig_tren, ax_tren = plt.subplots(figsize=(10, 4))
+data_harian = data_provinsi.groupby("Date")['Total Cases'].sum()
+data_harian.plot(ax=ax_tren, color='darkred')
+ax_tren.set_xlabel("Tanggal")
+ax_tren.set_ylabel("Total Kasus")
+st.pyplot(fig_tren)
 
-scaler = StandardScaler()
-scaled_features = scaler.fit_transform(cluster_features)
+# proses klastering
+st.subheader("🔍 Proses Klasterisasi Provinsi")
 
-kmeans = KMeans(n_clusters=4, random_state=42)
-clusters = kmeans.fit_predict(scaled_features)
-cluster_features['Cluster'] = clusters
+fitur_klaster = data_covid.groupby("Location")[['Total Cases', 'Total Deaths', 'Total Recovered', 'Population Density']].mean()
+normalizer = StandardScaler()
+fitur_klaster_scaled = normalizer.fit_transform(fitur_klaster)
 
-df_clustered = df.merge(cluster_features['Cluster'], on='Location')
+model_klaster = KMeans(n_clusters=4, random_state=42)
+hasil_klaster = model_klaster.fit_predict(fitur_klaster_scaled)
 
-kordinat = pd.DataFrame({
-    'Location': [
-        'DKI Jakarta', 'Jawa Barat', 'Jawa Tengah', 'Jawa Timur',
-        'Bali', 'Sumatera Utara', 'Kalimantan Timur', 'Sulawesi Selatan'
-    ],
-    'lat': [
-        -6.2088, -6.9039, -7.1500, -7.2504,
-        -8.4095, 3.5952, 0.5383, -5.1477
-    ],
-    'lon': [
-        106.8456, 107.6186, 110.1403, 112.7688,
-        115.1889, 98.6722, 116.4194, 119.4327
-    ]
+fitur_klaster['Cluster ID'] = hasil_klaster
+
+# gabungkan hasil klaster ke data utama
+data_klaster = data_covid.merge(fitur_klaster['Cluster ID'], on='Location')
+
+# koordinat lokasi manual
+lokasi_koordinat = pd.DataFrame({
+    'Location': ['DKI Jakarta', 'Jawa Barat', 'Jawa Tengah', 'Jawa Timur', 'Bali', 'Sumatera Utara', 'Kalimantan Timur', 'Sulawesi Selatan'],
+    'Latitude': [-6.2088, -6.9039, -7.1500, -7.2504, -8.4095, 3.5952, 0.5383, -5.1477],
+    'Longitude': [106.8456, 107.6186, 110.1403, 112.7688, 115.1889, 98.6722, 116.4194, 119.4327]
 })
 
+peta_data = fitur_klaster.reset_index().merge(lokasi_koordinat, on='Location')
 
-map_df = cluster_features.reset_index().merge(kordinat, on='Location')
-
-st.subheader("Peta Interaktif Clustering Wilayah")
-fig_map = px.scatter_mapbox(
-    map_df,
-    lat="lat", lon="lon",
+# visualisasi map
+st.subheader("🗺️ Visualisasi Klaster pada Peta")
+peta_klaster = px.scatter_mapbox(
+    peta_data,
+    lat="Latitude", lon="Longitude",
     hover_name="Location",
-    color="Cluster",
+    color="Cluster ID",
     size="Total Cases",
     zoom=4,
     height=500,
     mapbox_style="carto-positron"
 )
-st.plotly_chart(fig_map, use_container_width=True)
+st.plotly_chart(peta_klaster, use_container_width=True)
 
-st.subheader("Ringkasan Risiko Wilayah Berdasarkan Cluster")
-st.dataframe(cluster_features.sort_values("Cluster"))
+# tabel ringkasan
+st.subheader("📊 Ringkasan Tiap Klaster")
+st.dataframe(fitur_klaster.sort_values("Cluster ID"))
